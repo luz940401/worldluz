@@ -9,7 +9,7 @@
 ## 使用
 
 1. 開啟網站，點「登入同步」，以電子郵件的登入連結登入。
-2. 第一次連結帳號時，選擇「使用本機版本並上傳」。另一台新裝置登入後會下載同一份世界。
+2. 首次登入會自動備份；本機與雲端各有修改時，首次連結會保留兩份劇本。另一台新裝置登入後會下載同一份世界。
 3. 等右上角顯示「已同步」再切換裝置。兩台都有修改時會要求選版本，不會直接覆寫。
 4. 舊本機版的資料不會自動搬到新網址。先在舊版「匯出備份」，再於網站「匯入備份」。
 
@@ -36,3 +36,5 @@ UI 測試使用電腦已安裝的 Edge。`npm run build` 產生 `_site/`，GitHu
 - SQL 位於 `supabase/migrations/`。登入 Site URL 必須設為正式網站網址。
 - 如需不同專案，可在 GitHub Actions repository variables 設定 `SUPABASE_URL` 及 `SUPABASE_PUBLISHABLE_KEY`，建置時覆蓋公開設定。
 - Supabase 官方說明：[電子郵件登入](https://supabase.com/docs/guides/auth/auth-email-passwordless)、[預設郵件限制](https://supabase.com/docs/guides/auth/auth-smtp)。
+
+於「劇本 → 本機自動備份」可將最近版本還原為副本。一般瀏覽器保留最近 8 份，備援儲存模式保留 3 份；版本歷史只保存在該瀏覽器。

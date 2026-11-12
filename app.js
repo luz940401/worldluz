@@ -53,7 +53,46 @@ let database=null,storageReady=false,cloudMeta={owner:null,revision:0,dirty:fals
 const changeListeners=new Set();let readyResolve;const appReady=new Promise(resolve=>readyResolve=resolve);
 async function openDatabase(){return new Promise((resolve,reject)=>{const req=indexedDB.open('weave-world',1);req.onupgradeneeded=()=>req.result.createObjectStore('projects');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error('database blocked'));});}
 async function persist(){if(!storageReady)return;clearTimeout(saveTimer);try{if(database){await new Promise((resolve,reject)=>{const tx=database.transaction('projects','readwrite');tx.objectStore('projects').put(JSON.parse(JSON.stringify(librarySnapshot())),'current');tx.objectStore('projects').put({...cloudMeta},'cloud-meta');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}else {localStorage.setItem(KEY,JSON.stringify(librarySnapshot()));localStorage.setItem(KEY+'-meta',JSON.stringify(cloudMeta));}$('#saveState').textContent='✓ 已儲存於本機'+(database?'資料庫':'瀏覽器');}catch(e){$('#saveState').textContent='儲存失敗，請立即匯出備份';toast('儲存失敗：請匯出備份保留目前內容。');}}
-function save(mark=true){if(mark){cloudMeta.edited=true;cloudMeta.dirty=true;for(const notify of changeListeners)notify();}clearTimeout(saveTimer);$('#saveState').textContent='儲存中…';saveTimer=setTimeout(persist,180);}
+// Version history is local to this browser and separate from the live bookcase.
+let autoPending=false,autoTimer,autoDeadline,baseline=null;
+const autoPrefix='auto-version:',versionRange=()=>IDBKeyRange.bound(autoPrefix,autoPrefix+'\uffff');
+function queueVersion(){autoPending=true;clearTimeout(autoTimer);autoTimer=setTimeout(flushVersion,1200);autoDeadline??=setTimeout(flushVersion,10000);}
+function flushVersion(){
+ clearTimeout(autoTimer);clearTimeout(autoDeadline);autoDeadline=null;
+ if(!autoPending||!storageReady)return;
+ autoPending=false;
+ const now=Date.now(),items=[];
+ if(baseline)items.push({at:now-1,payload:baseline});
+ items.push({at:now,payload:structuredClone(librarySnapshot())});baseline=null;
+ try{
+  if(database){
+   const tx=database.transaction('projects','readwrite'),store=tx.objectStore('projects');
+   for(const item of items)store.put(item,autoPrefix+item.at);
+   const keys=store.getAllKeys(versionRange());keys.onsuccess=()=>keys.result.slice(0,-8).forEach(k=>store.delete(k));
+   tx.onabort=()=>toast('本機版本備份未完成，請匯出備份。');
+  }else{
+   const list=JSON.parse(localStorage.getItem(KEY+'-versions')||'[]');
+   localStorage.setItem(KEY+'-versions',JSON.stringify([...list,...items].slice(-3)));
+  }
+ }catch{toast('本機版本備份未完成，請匯出備份。');}
+}
+async function listVersions(){
+ if(!database)return JSON.parse(localStorage.getItem(KEY+'-versions')||'[]').map(x=>x.at).reverse();
+ return new Promise((ok,fail)=>{const r=database.transaction('projects').objectStore('projects').getAllKeys(versionRange());r.onsuccess=()=>ok(r.result.reverse().map(k=>Number(k.slice(autoPrefix.length))));r.onerror=()=>fail(r.error);});
+}
+async function showVersions(){
+ flushVersion();const area=$('#backupVersions');area.replaceChildren();
+ try{const times=await listVersions();if(!times.length){area.textContent='尚無版本；編輯後會自動備份。';return;}
+ for(const at of times){const b=document.createElement('button');b.type='button';b.textContent='還原副本 · '+new Date(at).toLocaleString('zh-TW',{hour12:false});area.append(b);
+ b.onclick=async()=>{try{const item=database?await readLocal(autoPrefix+at):JSON.parse(localStorage.getItem(KEY+'-versions')||'[]').find(x=>x.at===at);
+ if(!item){toast('這個版本已輪替，請重新開啟備份清單。');return;}
+ const worlds=unpackLibrary(item.payload);
+ if(!confirm('將這個版本的 '+worlds.size+' 個劇本還原成新副本？目前內容會保留。'))return;
+ let first;for(const world of worlds.values()){world.name+='（還原副本）';const id=uid();first??=id;stories.set(id,world);}switchStory(first);save();toast('已還原到書架，原劇本仍保留。');
+ }catch{toast('讀取版本失敗。');}};}
+ }catch{area.textContent='暫時無法讀取本機備份。';}
+}
+function save(mark=true){if(mark){queueVersion();cloudMeta.edited=true;cloudMeta.dirty=true;for(const notify of changeListeners)notify();}clearTimeout(saveTimer);$('#saveState').textContent='儲存中…';saveTimer=setTimeout(persist,180);}
 function toast(msg){$('#toast').textContent=msg;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500);}
 function node(id){return state.nodes.find(n=>n.id===id);}
 function plain(html){const d=document.createElement('div');d.innerHTML=html;return d.textContent||'';}
@@ -208,7 +247,8 @@ function showShelf(){
   $('#storyShelf').append(restore);
  }
 }
-$('#storiesBtn').onclick=()=>{showShelf();$('#newStoryName').value='';$('#storiesDialog').showModal();};
+const versionsPanel=document.createElement('details');versionsPanel.innerHTML='<summary>本機自動備份</summary><p>編輯後自動保留最近版本。還原會新增劇本副本。</p><div id="backupVersions" style="display:grid;gap:6px"></div>';$('#storiesDialog').append(versionsPanel);versionsPanel.ontoggle=()=>{if(versionsPanel.open)showVersions();};
+$('#storiesBtn').onclick=()=>{versionsPanel.open=false;showShelf();$('#newStoryName').value='';$('#storiesDialog').showModal();};
 $('#closeStories').onclick=()=>$('#storiesDialog').close();
 $('#newStoryForm').onsubmit=e=>{e.preventDefault();const name=$('#newStoryName').value.trim();if(!name){$('#newStoryName').focus();return;}
  const id=uid();stories.set(id,{version:1,name,nodes:[],relations:[],regions:[]});switchStory(id);save();toast('已建立「'+name+'」，雙擊白板就能記下第一個想法。');
@@ -218,16 +258,16 @@ $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],
 $('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>50*1024*1024)throw Error('備份超過 50 MB');const parsed=JSON.parse(await f.text());if(parsed.otherStories){const imported=unpackLibrary(parsed);if(!confirm('將保護副本中的 '+imported.size+' 個劇本加入書架？現有劇本會保留。'))return;stories.set(activeStory,state);let first;for(const world of imported.values()){const id=uid();first??=id;stories.set(id,world);}switchStory(first);save();return;}const incoming=validate(parsed);delete incoming.primaryStoryId;if(!confirm(`匯入「${incoming.name}」的 ${incoming.nodes.length} 筆設定？這會取代目前白板，建議先匯出目前內容。`))return;checkpoint();state=incoming;nav=[];closeInspector();save();render();fit();toast('備份已載入。');}catch(err){toast('無法匯入：'+err.message);}finally{e.target.value='';}};
 document.addEventListener('keydown',e=>{const editing=e.target.matches('input,textarea,select,[contenteditable]');if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#search').focus();}if(e.key==='Escape'){endConnection();$('#mentionMenu').hidden=true;$('#searchResults').hidden=true;}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!editing){e.preventDefault();undo(e.shiftKey);}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'&&!editing){e.preventDefault();undo(true);}if(e.key==='n'&&!editing&&!document.querySelector('dialog[open]'))showAdd();});
 window.addEventListener('beforeunload',()=>persist());
-window.addEventListener('pagehide',()=>persist());
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persist();});
+window.addEventListener('pagehide',()=>{flushVersion();persist();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){flushVersion();persist();}});
 function readLocal(key){return new Promise((resolve,reject)=>{const req=database.transaction('projects').objectStore('projects').get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 function downloadData(payload,name){const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
 window.worldluz={
  ready:appReady,snapshot:()=>JSON.parse(JSON.stringify(librarySnapshot())),getMeta:()=>({...cloudMeta}),toast,download:downloadData,
  onChange:listener=>changeListeners.add(listener),
  setMeta:async meta=>{cloudMeta={...meta};await persist();},
- applyRemote:(payload,meta)=>{deletedStory=null;state=loadLibrary(JSON.parse(JSON.stringify(payload)));resetStoryUI();if($('#storiesDialog').open)showShelf();cloudMeta={...meta};},
+ applyRemote:(payload,meta)=>{flushVersion();deletedStory=null;state=loadLibrary(JSON.parse(JSON.stringify(payload)));resetStoryUI();baseline=structuredClone(librarySnapshot());if($('#storiesDialog').open)showShelf();cloudMeta={...meta};},
  backup:async(payload,label)=>{const item={payload:JSON.parse(JSON.stringify(payload)),label,at:new Date().toISOString()};if(!database){localStorage.setItem(KEY+'-backup',JSON.stringify(item));return;}await new Promise((resolve,reject)=>{const tx=database.transaction('projects','readwrite'),store=tx.objectStore('projects'),read=store.get('safety-backups');read.onsuccess=()=>store.put([item,...(read.result||[])].slice(0,3),'safety-backups');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});},
  latestBackup:async()=>database?(await readLocal('safety-backups'))?.[0]:JSON.parse(localStorage.getItem(KEY+'-backup')||'null')
 };
-(async()=>{try{database=await openDatabase();const [saved,meta]=await Promise.all([readLocal('current'),readLocal('cloud-meta')]);if(saved){state=loadLibrary(saved);cloudMeta=meta||{...cloudMeta,edited:true,dirty:true};}}catch(e){database=null;try{cloudMeta=JSON.parse(localStorage.getItem(KEY+'-meta')||'null')||{...cloudMeta,edited:!!localStorage.getItem(KEY)};}catch{}}storageReady=true;render();fit();if(loadFailed)toast('舊版資料無法讀取，請匯入備份。');save(false);readyResolve();})();
+(async()=>{try{database=await openDatabase();const [saved,meta]=await Promise.all([readLocal('current'),readLocal('cloud-meta')]);if(saved){state=loadLibrary(saved);cloudMeta=meta||{...cloudMeta,edited:true,dirty:true};}}catch(e){database=null;try{cloudMeta=JSON.parse(localStorage.getItem(KEY+'-meta')||'null')||{...cloudMeta,edited:!!localStorage.getItem(KEY)};}catch{}}storageReady=true;baseline=structuredClone(librarySnapshot());render();fit();if(loadFailed)toast('舊版資料無法讀取，請匯入備份。');save(false);readyResolve();})();
