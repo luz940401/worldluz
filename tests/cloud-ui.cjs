@@ -9,5 +9,9 @@ const fs=require('node:fs');const path=require('node:path');const http=require('
  await page.screenshot({path:'test-results/warm-desktop.png'});
  await page.setViewportSize({width:390,height:844});await page.locator('#addBtn').click();await page.locator('#newName').fill('手機上的靈感');await page.locator('#createBtn').click();assert.equal(await page.locator('#nodeName').inputValue(),'手機上的靈感');
  const panel=await page.locator('#inspector').boundingBox();assert.ok(panel.x>=0&&panel.x+panel.width<=391);await page.locator('#bodyEditor').fill('可以在手機編輯');await page.screenshot({path:'test-results/warm-mobile.png'});assert.deepEqual(errors,[]);
+ await page.locator('#closeInspector').click();await page.locator('#storiesBtn').click();await page.getByText('本機自動備份',{exact:true}).click();await page.locator('#backupVersions button').first().waitFor();
+ await page.reload();await page.locator('#storiesBtn').click();await page.getByText('本機自動備份',{exact:true}).click();
+ page.once('dialog',d=>d.accept());await page.locator('#backupVersions button').first().click();
+ await require('@playwright/test').expect(page.locator('#projectName')).toHaveValue(/還原副本/);await page.locator('#storiesBtn').click();assert.equal(await page.locator('.shelf-row').count(),2);
  await browser.close();await new Promise(r=>server.close(r));console.log('PASS: warm desktop/mobile UI, login panel, editing and persistence.');
 })().catch(e=>{console.error(e);process.exit(1)});
