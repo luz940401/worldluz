@@ -16,5 +16,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('n
  await b.p.locator('#useRemote').click();await expect(b.p.locator('#cloudBtn')).toContainText('已同步');await expect(b.p.locator('.card[data-id="p1"]')).toContainText('第一台後來的角色');
  const download=b.p.waitForEvent('download');await b.p.locator('#recoverBackup').click();await (await download).saveAs('test-results/conflict-backup.json');assert.match(fs.readFileSync('test-results/conflict-backup.json','utf8'),/離線的角色/);
  await b.p.locator('#closeCloud').click();await b.p.reload();await expect(b.p.locator('#cloudBtn')).toContainText('已同步');await expect(b.p.locator('.card[data-id="p1"]')).toContainText('第一台後來的角色');
+ await a.p.locator('#storiesBtn').click();await a.p.locator('#newStoryName').fill('第二個劇本');await a.p.locator('#newStoryForm button').click();
+ await expect(a.p.locator('.card')).toHaveCount(0);await a.p.locator('#addBtn').click();await a.p.locator('#newName').fill('只在第二本的筆記');await a.p.locator('#createBtn').click();
+ await expect(a.p.locator('#cloudBtn')).toContainText('已同步',{timeout:10000});
+ await a.p.reload();await expect(a.p.locator('#projectName')).toHaveValue('第二個劇本');await expect(a.p.locator('.card')).toHaveCount(1);
+ const c=await device();await expect(c.p.locator('#cloudBtn')).toContainText('已同步');await expect(c.p.locator('.card[data-id="p1"]')).toContainText('第一台後來的角色');
+ await c.p.locator('#storiesBtn').click();await c.p.locator('#storyShelf button').filter({hasText:'第二個劇本'}).click();
+ await expect(c.p.locator('.card')).toHaveCount(1);await expect(c.p.locator('.card')).toContainText('只在第二本的筆記');
+ await c.p.locator('#storiesBtn').click();await c.p.locator('#storyShelf button').filter({hasText:'霧海紀事'}).click();await expect(c.p.locator('.card')).toHaveCount(8);
  await browser.close();await new Promise(r=>srv.close(r));console.log('PASS: two browser sessions with Supabase SDK, upload, download, offline edits, conflict resolution, backup recovery, reload.');
 })().catch(e=>{console.error(e);process.exit(1)});
