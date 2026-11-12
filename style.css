@@ -10,3 +10,5 @@ header,.rail,#inspector,dialog{background:#fffcf7}button,.search-wrap,.card,.can
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
 #storyShelf,#newStoryForm{display:grid;gap:9px}#storyShelf{max-height:40vh;overflow:auto}#storyShelf button{text-align:left;overflow-wrap:anywhere}#newStoryForm{margin-top:20px}#newStoryForm label{font-weight:600}
+
+.shelf-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.shelf-row .danger{align-self:center}.inspect-actions,.editor-tools{flex-wrap:wrap}
