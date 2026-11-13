@@ -96,9 +96,9 @@ function save(mark=true){if(mark){queueVersion();cloudMeta.edited=true;cloudMeta
 function toast(msg){$('#toast').textContent=msg;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500);}
 function node(id){return state.nodes.find(n=>n.id===id);}
 function plain(html){const d=document.createElement('div');d.innerHTML=html;return d.textContent||'';}
-function refs(n){const t=document.createElement('template');t.innerHTML=n.body||'';return [...new Set([...t.content.querySelectorAll('[data-ref]')].map(a=>a.dataset.ref))];}
+function refs(n){const t=document.createElement('template');t.innerHTML=n.body||'';return [...new Set([...t.content.querySelectorAll('[data-ref]')].map(a=>a.dataset.ref).concat(Array.isArray(n.importedMentions)?n.importedMentions:[]))];}
 function resolvedBody(n){const t=document.createElement('template');t.innerHTML=n.body||'';t.content.querySelectorAll('[data-ref]').forEach(a=>{const target=node(a.dataset.ref);if(target){a.textContent=target.name;a.title='開啟 '+target.name;}else{a.replaceWith(document.createTextNode(a.textContent));}});return t.innerHTML;}
-function allLinks(){let out=state.relations.map(r=>({...r,formal:true}));for(const n of state.nodes){for(const [field,label] of [['continent','位於'],['town','出生／所在城鎮'],['organization','隸屬'],['location','目前所在地']])if(n[field]&&node(n[field])&&n[field]!==n.id)out.push({id:n.id+field,from:n.id,to:n[field],label,field});for(const r of refs(n))if(node(r)&&r!==n.id)out.push({id:n.id+r,from:n.id,to:r,label:'提及',mention:true});}return out;}
+function allLinks(){let out=state.relations.map(r=>({...r,formal:true}));for(const n of state.nodes){if(n.treeParent&&node(n.treeParent))out.push({id:'tree:'+n.id,from:n.treeParent,to:n.id,label:'樹狀分支',tree:true});for(const [field,label] of [['continent','位於'],['town','出生／所在城鎮'],['organization','隸屬'],['location','目前所在地']])if(n[field]&&node(n[field])&&n[field]!==n.id)out.push({id:n.id+field,from:n.id,to:n[field],label,field});for(const r of refs(n))if(node(r)&&r!==n.id)out.push({id:n.id+r,from:n.id,to:r,label:'提及',mention:true});}return out;}
 function connected(id){const result=new Set([id]);allLinks().forEach(r=>{if(r.from===id)result.add(r.to);if(r.to===id)result.add(r.from);});return result;}
 let focusRelations=false;
 function render(){renderCards();renderEdges();renderRegions();$('#count').textContent=`${state.nodes.length} 筆設定 · ${state.relations.length} 條關係`;$('#projectName').value=state.name;updateUndo();}
@@ -189,16 +189,16 @@ $('#board').addEventListener('pointerup',()=>{if(!drag)return;if(drag.id){if(!dr
 $('#board').addEventListener('dblclick',e=>{if(!e.target.closest('.card'))showAdd('note',boardPoint(e.clientX,e.clientY));});$('#board').addEventListener('keydown',e=>{if(e.key==='Delete'&&e.target.closest('.card')){e.preventDefault();deleteNode(e.target.closest('.card').dataset.id);return;}if(e.key==='Enter'&&e.target.closest('.card'))pickCard(e.target.closest('.card').dataset.id);});
 $('#board').addEventListener('wheel',e=>{e.preventDefault();zoom(Math.exp(-e.deltaY*.001),e.clientX,e.clientY);},{passive:false});$('#board').ondragover=e=>e.preventDefault();$('#board').ondrop=e=>{e.preventDefault();const card=e.target.closest('.card');if(card)uploadImage(e.dataTransfer.files[0],card.dataset.id);else toast('將圖片拖到人物或其他設定卡片上即可加入。');};
 function arrange(tree=false){
- checkpoint();const movable=state.nodes.filter(n=>n.type!=='note'&&!n.pinned),free=state.nodes.filter(n=>n.type==='note'||n.pinned);
+ checkpoint();const custom=tree&&state.nodes.some(n=>Object.hasOwn(n,'treeParent'));const movable=custom?state.nodes:state.nodes.filter(n=>n.type!=='note'&&!n.pinned),free=custom?[]:state.nodes.filter(n=>n.type==='note'||n.pinned);
  const parent=n=>[n.organization,n.town,n.continent].find(id=>id&&id!==n.id&&node(id))||'';
  const continentOf=n=>{const seen=new Set();let current=n;while(current&&!seen.has(current.id)){if(current.type==='continent')return current.id;seen.add(current.id);if(current.continent&&node(current.continent))return current.continent;current=node(parent(current));}return '';};
- const groups=new Map();for(const n of movable){const key=continentOf(n);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(n);}
+ const groups=new Map();for(const n of movable){const key=custom?'':continentOf(n);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(n);}
  const heights=cardHeights(),size=n=>heights.get(n.id)||170;let y=270;const regions=[];
  for(const [key,list] of groups){
   const positions=new Map();let height,width;
   if(tree){
    const members=new Set(list.map(n=>n.id)),children=new Map(),parents=new Map();
-   for(const n of list){let p=parent(n);if(['task','foreshadow','event'].includes(n.type)){const person=refs(n).find(id=>node(id)?.type==='character'&&members.has(id));if(person)p=person;}if(!members.has(p))p='';parents.set(n.id,p);}
+   for(const n of list){let p=parent(n);if(['task','foreshadow','event'].includes(n.type)){const person=refs(n).find(id=>node(id)?.type==='character'&&members.has(id));if(person)p=person;}if(custom)p=n.treeParent||'';if(!members.has(p))p='';parents.set(n.id,p);}
    for(const n of list){let p=parents.get(n.id),seen=new Set([n.id]);while(p){if(seen.has(p)){parents.set(n.id,'');break;}seen.add(p);p=parents.get(p);}}
    for(const n of list){const p=parents.get(n.id);if(!children.has(p))children.set(p,[]);children.get(p).push(n);}
    const spans=new Map(),gap=48;
@@ -218,7 +218,7 @@ function arrange(tree=false){
   // Move the entire group past stationary notes or pinned cards, without changing those cards.
   let shift=0,overlap=true;while(overlap){overlap=false;for(const [id,p] of positions)for(const n of free){if(p.x<n.x+245&&p.x+245>n.x&&p.y+shift<n.y+size(n)+20&&p.y+shift+(heights.get(id)||170)+20>n.y){shift=Math.max(shift,n.y+size(n)+40-p.y);overlap=true;}}}
   for(const n of list){const p=positions.get(n.id);n.x=p.x;n.y=p.y+shift;}
-  regions.push({name:node(key)?.name||'尚未歸屬的設定',subtitle:tree?'樹狀 · 大陸 → 城鎮 → 組織 → 人物 → 劇情':'依城鎮、組織分組 · 保留跨區域關係',x:45,y:y+shift-75,w:width,h:height});y+=height+shift+80;
+  regions.push({name:custom?'劇本樹狀圖':node(key)?.name||'尚未歸屬的設定',subtitle:tree?'樹狀 · 大陸 → 城鎮 → 組織 → 人物 → 劇情':'依城鎮、組織分組 · 保留跨區域關係',x:45,y:y+shift-75,w:width,h:height});y+=height+shift+80;
  }
  state.regions=regions;save();render();fit();toast(tree?'已排成樹狀；自由連線仍保留。':'已依區域與分類整理；便條與固定卡片保留原位。');
 }
