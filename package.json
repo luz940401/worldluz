@@ -9,7 +9,8 @@
     "test:ui": "node test-app.cjs && node tests/cloud-ui.cjs && node tests/cloud-sync-ui.cjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.117.3"
+    "@supabase/supabase-js": "2.117.3",
+    "exceljs": "4.4.0"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",
