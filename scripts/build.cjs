@@ -3,8 +3,9 @@ const path=require('node:path');
 const esbuild=require('esbuild');
 (async()=>{
  await esbuild.build({entryPoints:['src/cloud-client.js'],bundle:true,minify:true,format:'iife',target:['es2022'],outfile:'cloud.js',legalComments:'eof'});
+ fs.copyFileSync(require.resolve('exceljs/dist/exceljs.min.js'),'exceljs.min.js');
  const out=path.resolve('_site');fs.mkdirSync(out,{recursive:true});
- for(const name of ['index.html','app.js','style.css','cloud.js','config.js'])fs.copyFileSync(name,path.join(out,name));
+ for(const name of ['index.html','app.js','style.css','excel-export.js','exceljs.min.js','cloud.js','config.js'])fs.copyFileSync(name,path.join(out,name));
  const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_PUBLISHABLE_KEY;
  if(url||key){
   if(!url||!key||!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url))throw Error('Set both SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.');
